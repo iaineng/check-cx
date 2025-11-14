@@ -124,7 +124,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
             实时检查多模型可用性
           </p>
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            AI 对话健康面板
+            模型对话健康面板
           </h1>
           {lastUpdatedLabel ? (
             <p className="text-sm text-muted-foreground">
@@ -176,7 +176,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                     </Badge>
                   </div>
 
-                  <div className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-4">
+                  <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
                         最近检查
