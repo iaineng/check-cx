@@ -88,7 +88,7 @@ Check CX 是一套基于 **Next.js 16** + **shadcn/ui** 构建的现代化 AI �
 1. **克隆仓库**
 
    ```bash
-   git clone https://github.com/your-username/check-cx.git
+   git clone https://github.com/bingzi-233/check-cx.git
    cd check-cx
    ```
 
