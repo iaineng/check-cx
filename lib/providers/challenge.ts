@@ -13,6 +13,27 @@ export interface Challenge {
 }
 
 /**
+ * 构建带有 few-shot 示例的 prompt
+ *
+ * 通过示例引导模型仅输出数字结果，减少验证失败率
+ *
+ * @param question - 实际的数学问题
+ * @returns 包含示例的完整 prompt
+ */
+function buildPromptWithExamples(question: string): string {
+  return `Calculate and respond with ONLY the number, nothing else.
+
+Q: 3 + 5 = ?
+A: 8
+
+Q: 12 - 7 = ?
+A: 5
+
+Q: ${question}
+A:`;
+}
+
+/**
  * 生成一个随机数学挑战
  *
  * 使用简单的加减法，确保所有 LLM 都能正确计算
@@ -28,7 +49,7 @@ export function generateChallenge(): Challenge {
   if (isAddition) {
     const answer = a + b;
     return {
-      prompt: `${a} + ${b} = ?`,
+      prompt: buildPromptWithExamples(`${a} + ${b} = ?`),
       expectedAnswer: String(answer),
     };
   } else {
@@ -37,7 +58,7 @@ export function generateChallenge(): Challenge {
     const smaller = Math.min(a, b);
     const answer = larger - smaller;
     return {
-      prompt: `${larger} - ${smaller} = ?`,
+      prompt: buildPromptWithExamples(`${larger} - ${smaller} = ?`),
       expectedAnswer: String(answer),
     };
   }
