@@ -2,31 +2,13 @@
  * Provider 检查统一入口
  */
 
-import type {CheckResult, ProviderConfig} from "../types";
-import {getErrorMessage, logError} from "../utils";
-import {checkOpenAI} from "./openai";
-import {checkGemini} from "./gemini";
-import {checkAnthropic} from "./anthropic";
+import type { CheckResult, ProviderConfig } from "../types";
+import { getErrorMessage, logError } from "../utils";
+import { checkWithAiSdk } from "./ai-sdk-check";
 
 // 最多尝试 3 次：初始一次 + 2 次重试
 const MAX_REQUEST_ABORT_RETRIES = 2;
 const REQUEST_ABORTED_PATTERN = /request was aborted\.?/i;
-
-/**
- * 检查单个 Provider
- */
-async function checkProvider(config: ProviderConfig): Promise<CheckResult> {
-  switch (config.type) {
-    case "openai":
-      return checkOpenAI(config);
-    case "gemini":
-      return checkGemini(config);
-    case "anthropic":
-      return checkAnthropic(config);
-    default:
-      throw new Error(`Unsupported provider: ${config.type satisfies never}`);
-  }
-}
 
 function shouldRetryRequestAborted(message: string | undefined): boolean {
   if (!message) {
@@ -38,7 +20,7 @@ function shouldRetryRequestAborted(message: string | undefined): boolean {
 async function checkWithRetry(config: ProviderConfig): Promise<CheckResult> {
   for (let attempt = 0; attempt <= MAX_REQUEST_ABORT_RETRIES; attempt += 1) {
     try {
-      const result = await checkProvider(config);
+      const result = await checkWithAiSdk(config);
       if (
         result.status === "failed" &&
         shouldRetryRequestAborted(result.message) &&
@@ -105,7 +87,5 @@ export async function runProviderChecks(
   return results.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// 导出各 Provider 的检查函数供外部使用
-export { checkOpenAI } from "./openai";
-export { checkGemini } from "./gemini";
-export { checkAnthropic } from "./anthropic";
+// 导出统一检查函数
+export { checkWithAiSdk } from "./ai-sdk-check";
