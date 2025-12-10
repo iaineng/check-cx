@@ -85,6 +85,7 @@ async function tick() {
       failed: 0,
       validation_failed: 0,
       maintenance: 0,
+      error: 0,
     };
     results.forEach((result) => {
       statusCounts[result.status] += 1;
@@ -98,7 +99,7 @@ async function tick() {
         statusCounts.operational
       } degraded=${statusCounts.degraded} failed=${
         statusCounts.failed
-      }。下次预计 ${nextSchedule}`
+      } error=${statusCounts.error}。下次预计 ${nextSchedule}`
     );
   } catch (error) {
     console.error("[check-cx] 轮询检测失败", error);

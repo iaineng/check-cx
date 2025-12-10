@@ -98,11 +98,71 @@ export function logError(context: string, error: unknown): void {
 }
 
 /**
+ * AI SDK API 调用错误类型
+ * 用于类型安全地访问 AI_APICallError 的属性
+ */
+interface AIAPICallError extends Error {
+  statusCode?: number;
+  responseBody?: string;
+  url?: string;
+}
+
+/**
+ * 从 responseBody 中提取错误消息
+ * 支持 SSE 格式和 JSON 格式
+ */
+function extractErrorFromResponseBody(responseBody: string): string | null {
+  // 尝试从 SSE 格式中提取 (event:error\ndata:{...})
+  const sseMatch = responseBody.match(/data:\s*(\{.*\})/);
+  if (sseMatch) {
+    try {
+      const data = JSON.parse(sseMatch[1]);
+      if (data.message) return data.message;
+      if (data.error?.message) return data.error.message;
+    } catch {
+      // 解析失败，继续尝试其他方式
+    }
+  }
+
+  // 尝试直接解析为 JSON
+  try {
+    const data = JSON.parse(responseBody);
+    if (data.message) return data.message;
+    if (data.error?.message) return data.error.message;
+  } catch {
+    // 不是 JSON，返回原始内容的前 100 字符
+    if (responseBody.length > 0) {
+      return responseBody.slice(0, 100);
+    }
+  }
+
+  return null;
+}
+
+/**
  * 安全地提取错误消息
+ * 支持从 AI SDK 的 AI_APICallError 中提取详细信息
  * @param error 错误对象
  */
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
+    const apiError = error as AIAPICallError;
+
+    // 尝试从 responseBody 中提取更有意义的错误消息
+    if (apiError.responseBody) {
+      const extracted = extractErrorFromResponseBody(apiError.responseBody);
+      if (extracted) {
+        // 包含状态码以便快速定位
+        const statusPrefix = apiError.statusCode ? `[${apiError.statusCode}] ` : "";
+        return `${statusPrefix}${extracted}`;
+      }
+    }
+
+    // 如果有状态码，添加到消息前
+    if (apiError.statusCode) {
+      return `[${apiError.statusCode}] ${error.message}`;
+    }
+
     return error.message;
   }
   if (typeof error === "string") {

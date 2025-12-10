@@ -55,7 +55,7 @@ async function checkWithRetry(config: ProviderConfig): Promise<CheckResult> {
         type: config.type,
         endpoint: config.endpoint,
         model: config.model,
-        status: "failed",
+        status: "error",
         latencyMs: null,
         pingLatencyMs: null,
         checkedAt: new Date().toISOString(),

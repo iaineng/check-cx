@@ -49,7 +49,7 @@ CREATE TABLE dev.check_history (
     ping_latency_ms double precision,
     CONSTRAINT check_history_pkey PRIMARY KEY (id),
     CONSTRAINT check_latency_ms_positive CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
-    CONSTRAINT check_status_enum CHECK ((status = ANY (ARRAY['operational'::text, 'degraded'::text, 'failed'::text, 'validation_failed'::text]))),
+    CONSTRAINT check_status_enum CHECK ((status = ANY (ARRAY['operational'::text, 'degraded'::text, 'failed'::text, 'validation_failed'::text, 'error'::text]))),
     CONSTRAINT fk_config FOREIGN KEY (config_id) REFERENCES dev.check_configs(id) ON DELETE CASCADE
 );
 

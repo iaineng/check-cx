@@ -127,9 +127,9 @@ const EFFORT_ALIAS_MAP: Record<string, ReasoningEffort> = {
 const REASONING_MODEL_HINTS = [
   /codex/i, // OpenAI Codex 系列
   /\bgpt-5/i, // GPT-5 系列（预留）
-  /\bo[1-9]/i, // OpenAI o1/o3 等推理模型
-  /deepseek-r1/i, // DeepSeek R1 推理模型
-  /qwq/i, // 通义千问 QwQ 推理模型
+  /\bo[1-9](?:-|$)/i, // OpenAI o1/o3 等推理模型（后跟 - 或结尾）
+  /\bdeepseek-r1/i, // DeepSeek R1 推理模型
+  /\bqwq/i, // 通义千问 QwQ 推理模型
 ];
 
 /**
@@ -225,7 +225,11 @@ function createCustomFetch(
         body: JSON.stringify(mergedBody),
       });
     } catch {
-      return fetch(input, init);
+      // JSON 解析失败时，仍然注入 headers
+      return fetch(input, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string>), ...headers },
+      });
     }
   };
 }
@@ -345,16 +349,44 @@ function isTimeoutError(error: Error & { name?: string }): boolean {
 }
 
 /**
+ * AI SDK APICallError 类型
+ */
+interface AIApiCallError extends Error {
+  statusCode?: number;
+  responseBody?: string;
+}
+
+/**
+ * 从 responseBody 中提取错误消息
+ */
+function extractMessageFromBody(body: string): string | null {
+  // 尝试解析 SSE 格式: data:{"message":"xxx"}
+  const match = body.match(/"message"\s*:\s*"([^"]+)"/);
+  return match?.[1] ?? null;
+}
+
+/**
  * 从错误对象中提取用户友好的错误消息
  *
- * @param error - 捕获的错误对象
- * @returns 格式化后的错误消息
+ * AI SDK 的 APICallError 包含：statusCode、responseBody、message
  */
-function getErrorMessage(error: Error & { name?: string }): string {
-  // 超时错误返回统一的中文提示
+function getErrorMessage(error: AIApiCallError): string {
   if (isTimeoutError(error)) return "请求超时";
-  // 其他错误返回原始消息或默认提示
-  return error?.message || "未知错误";
+
+  // 优先从 responseBody 提取详细信息
+  if (error.responseBody) {
+    const extracted = extractMessageFromBody(error.responseBody);
+    if (extracted) {
+      return error.statusCode ? `[${error.statusCode}] ${extracted}` : extracted;
+    }
+  }
+
+  // 回退到基础 message
+  if (error.message) {
+    return error.statusCode ? `[${error.statusCode}] ${error.message}` : error.message;
+  }
+
+  return "未知错误";
 }
 
 /**
@@ -379,7 +411,7 @@ interface ResultBuilderBase {
  */
 function buildCheckResult(
   base: ResultBuilderBase,
-  status: HealthStatus | "validation_failed" | "failed",
+  status: HealthStatus | "validation_failed" | "failed" | "error",
   latencyMs: number | null,
   message: string
 ): CheckResult {
@@ -410,7 +442,7 @@ function logCheckResult(
   const validStatus =
     isValid === null ? "失败(空回复)" : isValid ? "通过" : "失败";
   console.log(
-    `[${config.type}] ${config.groupName || "默认"} | ${config.name} | Q: ${prompt} | A: ${response || "(空)"} | 期望: ${expectedAnswer} | 验证: ${validStatus}`
+    `[${config.type}] ${config.groupName || "默认"} | ${config.name} | Q: ${prompt.replace(/\r?\n/g, ' ')} | A: ${response || "(空)"} | 期望: ${expectedAnswer} | 验证: ${validStatus}`
   );
 }
 
@@ -450,11 +482,18 @@ export async function checkWithAiSdk(
         ? { openai: { reasoningEffort } }
         : undefined;
 
+    // 用于捕获 onError 回调中的错误
+    let streamError: AIApiCallError | null = null;
+
     const result = streamText({
       model,
       prompt: challenge.prompt,
       abortSignal: controller.signal,
       ...(providerOptions && { providerOptions }),
+      onError({ error }) {
+        // AI SDK 的 error 是 AIApiCallError，直接保存
+        streamError = error as AIApiCallError;
+      },
     });
 
     let collectedResponse = "";
@@ -464,6 +503,12 @@ export async function checkWithAiSdk(
 
     const latencyMs = Date.now() - startedAt;
     const base = await makeBase();
+
+    // 检查流处理过程中是否有错误
+    if (streamError) {
+      logCheckResult(config, challenge.prompt, "", challenge.expectedAnswer, null);
+      return buildCheckResult(base, "error", latencyMs, getErrorMessage(streamError));
+    }
 
     // 空回复
     if (!collectedResponse.trim()) {
@@ -498,7 +543,7 @@ export async function checkWithAiSdk(
       status === "degraded" ? `响应成功但耗时 ${latencyMs}ms` : `验证通过 (${latencyMs}ms)`
     );
   } catch (error) {
-    return buildCheckResult(await makeBase(), "failed", null, getErrorMessage(error as Error));
+    return buildCheckResult(await makeBase(), "error", null, getErrorMessage(error as Error));
   } finally {
     clearTimeout(timeout);
   }

@@ -8,7 +8,7 @@ import type {OfficialStatusResult} from "./official-status";
 /**
  * Provider 健康状态
  */
-export type HealthStatus = "operational" | "degraded" | "failed" | "validation_failed" | "maintenance";
+export type HealthStatus = "operational" | "degraded" | "failed" | "validation_failed" | "maintenance" | "error";
 
 /**
  * 单次检查结果

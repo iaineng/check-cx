@@ -39,6 +39,12 @@ export const STATUS_META: Record<
     badge: "secondary",
     dot: "bg-blue-500",
   },
+  error: {
+    label: "错误",
+    description: "请求异常（网络错误、API报错、连接失败）",
+    badge: "danger",
+    dot: "bg-red-600",
+  },
 };
 
 export const OFFICIAL_STATUS_META: Record<

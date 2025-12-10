@@ -56,14 +56,14 @@ CREATE TABLE public.check_history (
     message         text,
     created_at      timestamptz DEFAULT now(),
 
-    CONSTRAINT check_status_valid CHECK (status IN ('operational', 'degraded', 'failed', 'validation_failed')),
+    CONSTRAINT check_status_valid CHECK (status IN ('operational', 'degraded', 'failed', 'validation_failed', 'error')),
     CONSTRAINT check_latency_positive CHECK (latency_ms IS NULL OR latency_ms >= 0)
 );
 
 COMMENT ON TABLE public.check_history IS '健康检测历史记录表';
 COMMENT ON COLUMN public.check_history.id IS '记录 ID';
 COMMENT ON COLUMN public.check_history.config_id IS '关联的配置 ID';
-COMMENT ON COLUMN public.check_history.status IS '状态: operational, degraded, failed, validation_failed';
+COMMENT ON COLUMN public.check_history.status IS '状态: operational, degraded, failed, validation_failed, error';
 COMMENT ON COLUMN public.check_history.latency_ms IS '响应延迟 (毫秒)';
 COMMENT ON COLUMN public.check_history.ping_latency_ms IS 'Ping 延迟 (毫秒)';
 COMMENT ON COLUMN public.check_history.checked_at IS '检测时间';
