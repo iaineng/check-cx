@@ -253,6 +253,9 @@ AS $$
 $$;
 
 -- RPC: 裁剪历史记录
+-- 先删除旧版本函数（单参数版本），避免函数重载冲突
+DROP FUNCTION IF EXISTS dev.prune_check_history(integer);
+
 CREATE OR REPLACE FUNCTION dev.prune_check_history(
   retention_days integer DEFAULT NULL,
   limit_per_config integer DEFAULT NULL

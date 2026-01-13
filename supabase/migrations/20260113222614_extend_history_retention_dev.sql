@@ -58,6 +58,9 @@ GROUP BY config_id;
 -- -----------------------------------------------------------------------------
 -- 3. 修改清理函数：从按数量改为按时间（保留兼容参数）
 -- -----------------------------------------------------------------------------
+-- 先删除旧版本函数（单参数版本），避免函数重载冲突
+DROP FUNCTION IF EXISTS dev.prune_check_history(integer);
+
 CREATE OR REPLACE FUNCTION dev.prune_check_history(
   retention_days integer DEFAULT NULL,
   limit_per_config integer DEFAULT NULL
