@@ -10,7 +10,8 @@ import {Badge} from "@/components/ui/badge";
 import {HoverCard, HoverCardContent, HoverCardTrigger} from "@/components/ui/hover-card";
 import type {AvailabilityPeriod, AvailabilityStat, ProviderTimeline, TrendDataPoint} from "@/lib/types";
 import {OFFICIAL_STATUS_META, PROVIDER_LABEL, STATUS_META} from "@/lib/core/status";
-import {cn, formatLocalTime} from "@/lib/utils";
+import {ClientTime} from "@/components/client-time";
+import {cn} from "@/lib/utils";
 
 interface ProviderCardProps {
   timeline: ProviderTimeline;
@@ -161,7 +162,7 @@ export function ProviderCard({
                       {officialStatusMeta.label}
                     </h4>
                     <span className="text-xs text-muted-foreground">
-                      {formatLocalTime(officialStatus.checkedAt)} 更新
+                      <ClientTime value={officialStatus.checkedAt} /> 更新
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground break-words">

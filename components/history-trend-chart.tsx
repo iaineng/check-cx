@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Line, LineChart, XAxis, YAxis, ReferenceLine } from "recharts";
 import type { AvailabilityPeriod, TrendDataPoint } from "@/lib/types";
 import { STATUS_META } from "@/lib/core/status";
-import { formatLocalTime } from "@/lib/utils";
+import { ClientTime } from "@/components/client-time";
 import {
   ChartConfig,
   ChartContainer,
@@ -185,7 +185,7 @@ function CustomTooltip({
         </span>
       </div>
       <p className="mt-1 text-[10px] text-muted-foreground">
-        {formatLocalTime(point.timestamp)}
+        <ClientTime value={point.timestamp} />
       </p>
     </div>
   );

@@ -36,8 +36,9 @@ import {CSS} from "@dnd-kit/utilities";
 import {ProviderCard} from "@/components/provider-card";
 import {ThemeToggle} from "@/components/theme-toggle";
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from "@/components/ui/collapsible";
+import {ClientTime} from "@/components/client-time";
 import type {AvailabilityPeriod, DashboardData, GroupedProviderTimelines} from "@/lib/types";
-import {cn, formatLocalTime} from "@/lib/utils";
+import {cn} from "@/lib/utils";
 
 interface DashboardViewProps {
   /** 首屏由服务端注入的聚合数据，用作前端轮询的初始快照 */
@@ -450,11 +451,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     return () => window.clearInterval(countdownTimer);
   }, [data.pollIntervalMs, latestCheckTimestamp]);
 
-  const lastUpdatedLabel = useMemo(
-    () => (lastUpdated ? formatLocalTime(lastUpdated) : null),
-    [lastUpdated]
-  );
-
   // 根据卡片数量决定宽屏列数
   const gridColsClass = useMemo(() => {
     if (total > 4) {
@@ -581,11 +577,11 @@ export function DashboardView({ initialData }: DashboardViewProps) {
               <span className="text-xs font-semibold uppercase tracking-wider">Operational</span>
            </div>
 
-           {lastUpdatedLabel && (
+           {lastUpdated && (
              <div className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <RefreshCcw className={cn("h-3 w-3", isRefreshing && "animate-spin")} />
-                  <span>更新于 {lastUpdatedLabel}</span>
+                  <span>更新于 <ClientTime value={lastUpdated} /></span>
                 </div>
                 <span className="opacity-30">|</span>
                 <span>{pollIntervalLabel} 轮询</span>

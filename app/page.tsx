@@ -1,4 +1,5 @@
 import {DashboardView} from "@/components/dashboard-view";
+import {ClientYear} from "@/components/client-time";
 import {loadDashboardData} from "@/lib/core/dashboard-data";
 import packageJson from "@/package.json";
 
@@ -19,7 +20,7 @@ export default async function Home() {
       <footer className="mt-16 border-t border-border/40">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col items-center justify-between gap-4 px-3 py-6 sm:flex-row sm:px-6 lg:px-12">
           <div className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Check CX. All rights reserved.
+            © <ClientYear placeholder="2026" /> Check CX. All rights reserved.
           </div>
 
           <div className="flex items-center gap-4">

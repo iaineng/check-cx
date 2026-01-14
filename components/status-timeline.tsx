@@ -4,9 +4,10 @@ import {useEffect, useState} from "react";
 import {Clock} from "lucide-react";
 import {HoverCard, HoverCardContent, HoverCardTrigger} from "@/components/ui/hover-card";
 import {Badge} from "@/components/ui/badge";
+import {ClientTime} from "@/components/client-time";
 import {STATUS_META} from "@/lib/core/status";
 import type {TimelineItem} from "@/lib/types";
-import {cn, formatLocalTime} from "@/lib/utils";
+import {cn} from "@/lib/utils";
 
 interface StatusTimelineProps {
   /** 时间线条目列表，通常为最近 60 条按时间倒序的检测结果 */
@@ -115,7 +116,6 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
             }
 
             const preset = STATUS_META[segment.status];
-            const formattedTime = formatLocalTime(segment.checkedAt);
             const segmentKey = `${segment.id}-${segment.checkedAt}`;
             const isOpen = activeSegmentKey === segmentKey;
 
@@ -137,7 +137,7 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
                       "hover:opacity-80 hover:scale-y-110",
                       isOpen && "ring-1 ring-foreground/20 scale-y-110 z-10"
                     )}
-                    aria-label={`${formattedTime} · ${preset.label}`}
+                    aria-label={`${segment.checkedAt} · ${preset.label}`}
                     onClick={() =>
                       setActiveSegmentKey((current) =>
                         current === segmentKey ? null : segmentKey
@@ -151,7 +151,7 @@ export function StatusTimeline({ items, nextRefreshInMs, isMaintenance }: Status
                 >
                    <div className="flex items-center justify-between border-b border-border/50 pb-2">
                       <Badge variant={preset.badge} className="h-5 px-1.5 text-[10px]">{preset.label}</Badge>
-                      <span className="font-mono text-[10px] text-muted-foreground">{formattedTime}</span>
+                      <ClientTime value={segment.checkedAt} className="font-mono text-[10px] text-muted-foreground" />
                    </div>
                    
                    <div className="grid gap-2 text-xs">
