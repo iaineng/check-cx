@@ -41,7 +41,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 // 最大显示数据点数量，超过此值将进行采样
-const MAX_VISIBLE_DOTS = 30;
+const MAX_VISIBLE_DOTS = 15;
 
 interface SampledDataPoint extends TrendDataPoint {
   index: number;
@@ -128,20 +128,38 @@ function sampleDataPoints(
   mustInclude.add(minIdx);
   mustInclude.add(maxIdx);
 
-  // 4. 计算采样间隔，填充剩余点
-  const remainingSlots = maxPoints - mustInclude.size;
-  const selectedIndices = new Set(mustInclude);
+  // 4. 如果关键点已超过限制，需要对关键点进行等间隔采样
+  let selectedIndices: Set<number>;
+  if (mustInclude.size > maxPoints) {
+    // 关键点过多，保留首尾和极值，其余等间隔采样
+    const sortedMust = Array.from(mustInclude).sort((a, b) => a - b);
+    const criticalPoints = new Set<number>([0, points.length - 1, minIdx, maxIdx]);
+    const otherPoints = sortedMust.filter((i) => !criticalPoints.has(i));
 
-  if (remainingSlots > 0) {
-    const step = points.length / remainingSlots;
-    for (let i = 0; i < remainingSlots; i++) {
-      const idx = Math.min(Math.floor(i * step), points.length - 1);
-      selectedIndices.add(idx);
+    selectedIndices = new Set(criticalPoints);
+    const remaining = maxPoints - selectedIndices.size;
+    if (remaining > 0 && otherPoints.length > 0) {
+      const step = Math.max(1, Math.ceil(otherPoints.length / remaining));
+      for (let i = 0; i < otherPoints.length && selectedIndices.size < maxPoints; i += step) {
+        selectedIndices.add(otherPoints[i]);
+      }
+    }
+  } else {
+    // 关键点未超限制，填充剩余点
+    const remainingSlots = maxPoints - mustInclude.size;
+    selectedIndices = new Set(mustInclude);
+
+    if (remainingSlots > 0) {
+      const step = points.length / remainingSlots;
+      for (let i = 0; i < remainingSlots && selectedIndices.size < maxPoints; i++) {
+        const idx = Math.min(Math.floor(i * step), points.length - 1);
+        selectedIndices.add(idx);
+      }
     }
   }
 
-  // 5. 按原顺序排列采样点
-  const sortedIndices = Array.from(selectedIndices).sort((a, b) => a - b);
+  // 5. 按原顺序排列采样点，确保不超过 maxPoints
+  const sortedIndices = Array.from(selectedIndices).sort((a, b) => a - b).slice(0, maxPoints);
   const sampledPoints = sortedIndices.map((i) => points[i]);
 
   // 6. 标记采样后的关键点索引
