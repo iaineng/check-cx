@@ -3,8 +3,6 @@
   "framework": "nextjs",
   "regions": ["hnd1"],
   "env": {
-    "CHECK_POLL_INTERVAL_SECONDS": "300",
-    "OFFICIAL_STATUS_CHECK_INTERVAL_SECONDS": "300"
   },
   "crons": []
 }
