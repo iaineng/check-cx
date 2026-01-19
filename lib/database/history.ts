@@ -326,6 +326,20 @@ const PERIOD_INTERVALS: Record<string, string> = {
   "30d": "30 days",
 };
 
+/**
+ * 趋势数据缓存
+ * - 趋势数据变化较慢，缓存 5 分钟以减少数据库压力
+ * - 按 period 分开缓存
+ */
+interface TrendDataCache {
+  data: TrendDataMap;
+  lastFetchedAt: number;
+}
+
+const TREND_CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
+
+const trendDataCache: Record<string, TrendDataCache> = {};
+
 export async function loadHistoryTrendData(options: {
   period: AvailabilityPeriod;
   allowedIds?: Iterable<string> | null;
@@ -333,6 +347,17 @@ export async function loadHistoryTrendData(options: {
   const normalizedIds = normalizeAllowedIds(options.allowedIds);
   if (Array.isArray(normalizedIds) && normalizedIds.length === 0) {
     return {};
+  }
+
+  // 生成缓存键
+  const idsKey = normalizedIds ? normalizedIds.sort().join(",") : "__all__";
+  const cacheKey = `${options.period}:${idsKey}`;
+
+  // 检查缓存
+  const now = Date.now();
+  const cached = trendDataCache[cacheKey];
+  if (cached && now - cached.lastFetchedAt < TREND_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   const supabase = createAdminClient();
@@ -345,12 +370,21 @@ export async function loadHistoryTrendData(options: {
   if (error) {
     logError("读取趋势历史失败", error);
     if (isMissingFunctionError(error)) {
-      return fallbackLoadTrendHistory(supabase, normalizedIds, sinceInterval);
+      const result = await fallbackLoadTrendHistory(supabase, normalizedIds, sinceInterval);
+      // 即使是 fallback 也缓存结果
+      trendDataCache[cacheKey] = { data: result, lastFetchedAt: now };
+      return result;
     }
-    return {};
+    // 查询失败时返回旧缓存（如果有）
+    return cached?.data ?? {};
   }
 
-  return mapTrendRows(data as RpcHistoryTrendRow[] | null);
+  const result = mapTrendRows(data as RpcHistoryTrendRow[] | null);
+
+  // 更新缓存
+  trendDataCache[cacheKey] = { data: result, lastFetchedAt: now };
+
+  return result;
 }
 
 async function fallbackLoadTrendHistory(
