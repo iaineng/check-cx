@@ -46,6 +46,7 @@ import type {
 } from "@/lib/types";
 import { UNGROUPED_DISPLAY_NAME } from "@/lib/types";
 import {cn} from "@/lib/utils";
+import {parseTagList, getTagColorClass} from "@/lib/utils/tag-colors";
 
 interface DashboardViewProps {
   /** 首屏由服务端注入的聚合数据，用作前端轮询的初始快照 */
@@ -334,6 +335,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   const [data, setData] = useState(initialData);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [timeToNextRefresh, setTimeToNextRefresh] = useState<number | null>(() =>
     computeRemainingMs(
       initialData.pollIntervalMs,
@@ -423,6 +425,19 @@ export function DashboardView({ initialData }: DashboardViewProps) {
           console.error("Failed to parse group order", e);
         }
       }
+
+      // Load selected tags
+      const savedTags = localStorage.getItem("check-cx-selected-tags");
+      if (savedTags) {
+        try {
+          const parsed = JSON.parse(savedTags);
+          if (Array.isArray(parsed)) {
+            setSelectedTags(parsed.filter((t): t is string => typeof t === "string"));
+          }
+        } catch (e) {
+          console.error("Failed to parse selected tags", e);
+        }
+      }
     }
   }, [initialGroupedTimelines]);
 
@@ -433,18 +448,25 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     }
   }, [sortMode]);
 
+  // Save selected tags to localStorage when they change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("check-cx-selected-tags", JSON.stringify(selectedTags));
+    }
+  }, [selectedTags]);
+
   // Sync when data updates (e.g. polling adds/removes groups)
   useEffect(() => {
     setOrderedGroupNames(prev => {
       const currentNames = groupedNames;
       const currentSet = new Set(currentNames);
-      
+
       // Keep existing order for groups that still exist
       const existingOrdered = prev.filter(name => currentSet.has(name));
-      
+
       // Add any new groups that weren't in the previous order
       const newGroups = currentNames.filter(name => !prev.includes(name));
-      
+
       // If nothing changed in terms of set membership, don't update state to avoid re-renders
       if (existingOrdered.length === prev.length && newGroups.length === 0 && existingOrdered.length === currentNames.length) {
         return prev;
@@ -590,6 +612,33 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     );
   }, [groupedTimelines]);
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const group of groupedTimelines) {
+      for (const tag of parseTagList(group.tags)) {
+        tagSet.add(tag);
+      }
+    }
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+  }, [groupedTimelines]);
+
+  const toggleTag = useCallback((tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }, []);
+
+  // Sync selected tags when data updates (remove tags that no longer exist)
+  useEffect(() => {
+    setSelectedTags(prev => {
+      const validTags = prev.filter(tag => allTags.includes(tag));
+      if (validTags.length === prev.length) {
+        return prev;
+      }
+      return validTags;
+    });
+  }, [allTags]);
+
   // Filter and sort groups based on search query and sort mode
   const filteredGroupNames = useMemo(() => {
     let result =
@@ -604,6 +653,16 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         const group = groupedTimelineMap.get(groupName);
         if (!group) return false;
         return group.displayName.toLowerCase().includes(query);
+      });
+    }
+
+    // Filter by selected tags
+    if (selectedTags.length > 0) {
+      result = result.filter((groupName) => {
+        const group = groupedTimelineMap.get(groupName);
+        if (!group) return false;
+        const groupTags = parseTagList(group.tags);
+        return selectedTags.some((tag) => groupTags.includes(tag));
       });
     }
 
@@ -624,8 +683,8 @@ export function DashboardView({ initialData }: DashboardViewProps) {
 
       if (sortMode === "group") {
         // Sort by tags: compare tag by tag (first tag, then second, etc.)
-        const tagsA = groupA.tags?.split(",").map(t => t.trim().toLowerCase()) || [];
-        const tagsB = groupB.tags?.split(",").map(t => t.trim().toLowerCase()) || [];
+        const tagsA = parseTagList(groupA.tags).map((t) => t.toLowerCase());
+        const tagsB = parseTagList(groupB.tags).map((t) => t.toLowerCase());
         const maxLen = Math.max(tagsA.length, tagsB.length);
 
         for (let i = 0; i < maxLen; i++) {
@@ -643,7 +702,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
     });
 
     return result;
-  }, [groupedNames, groupedTimelineMap, orderedGroupNames, searchQuery, sortMode]);
+  }, [groupedNames, groupedTimelineMap, orderedGroupNames, searchQuery, selectedTags, sortMode]);
 
   const groupedPanels = filteredGroupNames.length === 0 ? (
     <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/50 bg-muted/20 py-20 text-center">
@@ -651,19 +710,24 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         <Search className="h-8 w-8 text-muted-foreground" />
       </div>
       <h3 className="text-lg font-semibold">没有找到匹配的分组</h3>
-      <p className="text-muted-foreground">尝试使用其他关键词搜索</p>
-      <button
-        type="button"
-        onClick={() => setSearchQuery("")}
-        className="mt-4 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
-      >
-        清除搜索
-      </button>
+      <p className="text-muted-foreground">尝试使用其他关键词或标签筛选</p>
+      {(searchQuery || selectedTags.length > 0) && (
+        <button
+          type="button"
+          onClick={() => {
+            setSearchQuery("");
+            setSelectedTags([]);
+          }}
+          className="mt-4 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+        >
+          清除筛选
+        </button>
+      )}
     </div>
   ) : (
     <div className="space-y-4">
       {filteredGroupNames.map((groupName) => {
-        const group = groupedTimelines.find((g) => g.groupName === groupName);
+        const group = groupedTimelineMap.get(groupName);
         if (!group) return null;
         const commonProps = {
           group,
@@ -756,6 +820,40 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                    className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                  >
                    <X className="h-4 w-4" />
+                 </button>
+               )}
+             </div>
+           )}
+
+           {/* Tag Filter - only show when multiple groups and tags exist */}
+           {hasMultipleGroups && allTags.length > 0 && (
+             <div className="flex flex-wrap items-center gap-2">
+               {allTags.map((tag) => {
+                 const isSelected = selectedTags.includes(tag);
+                 return (
+                   <button
+                     key={tag}
+                     type="button"
+                     onClick={() => toggleTag(tag)}
+                     className={cn(
+                       "rounded-full px-3 py-1 text-xs font-semibold transition-all",
+                       isSelected
+                         ? cn(getTagColorClass(tag), "ring-2 ring-foreground/20")
+                         : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                     )}
+                   >
+                     {tag}
+                   </button>
+                 );
+               })}
+               {selectedTags.length > 0 && (
+                 <button
+                   type="button"
+                   onClick={() => setSelectedTags([])}
+                   className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                 >
+                   <X className="h-3 w-3" />
+                   清除
                  </button>
                )}
              </div>
