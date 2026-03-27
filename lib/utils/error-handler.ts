@@ -87,14 +87,31 @@ function sanitizeError(error: unknown): unknown {
   return sanitized;
 }
 
+function stringifySanitizedError(error: unknown): string {
+  const sanitized = sanitizeError(error);
+
+  if (typeof sanitized === "string") {
+    return sanitized;
+  }
+
+  try {
+    return JSON.stringify(sanitized, null, 2);
+  } catch {
+    return String(sanitized);
+  }
+}
+
 /**
  * 统一的错误日志记录
  * @param context 错误上下文
  * @param error 错误对象
  */
 export function logError(context: string, error: unknown): void {
-  const sanitized = sanitizeError(error);
-  console.error(`[check-cx] ${context}:`, sanitized);
+  console.error(`[check-cx] ${context}:`, sanitizeError(error));
+}
+
+export function getSanitizedErrorDetail(error: unknown): string {
+  return stringifySanitizedError(error);
 }
 
 /**

@@ -4,7 +4,7 @@
 
 import pLimit from "p-limit";
 import type { CheckResult, ProviderConfig } from "../types";
-import { getErrorMessage, logError } from "../utils";
+import { getErrorMessage, getSanitizedErrorDetail, logError } from "../utils";
 import { checkWithAiSdk } from "./ai-sdk-check";
 import { getCheckConcurrency } from "../core/polling-config";
 
@@ -62,6 +62,8 @@ async function checkWithRetry(config: ProviderConfig): Promise<CheckResult> {
         pingLatencyMs: null,
         checkedAt: new Date().toISOString(),
         message,
+        logMessage: getSanitizedErrorDetail(error),
+        groupName: config.groupName || null,
       };
     }
   }

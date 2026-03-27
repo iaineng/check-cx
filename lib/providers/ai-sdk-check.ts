@@ -22,9 +22,11 @@ import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 import type { CheckResult, HealthStatus, ProviderConfig } from "../types";
 import { DEFAULT_ENDPOINTS } from "../types";
+import { getSanitizedErrorDetail } from "../utils";
 import { generateChallenge, validateResponse } from "./challenge";
 import { measureEndpointPing } from "./endpoint-ping";
 
@@ -44,6 +46,33 @@ const EXCLUDED_METADATA_KEYS = new Set(["model", "prompt", "messages", "abortSig
 /** 用于从完整端点 URL 中提取 baseURL 的正则表达式 */
 const API_PATH_SUFFIX_REGEX = /\/(chat\/completions|responses|messages)\/?$/;
 
+/** 原生 Gemini 端点识别正则：包含 /models/ 且以 :generateContent 或 :streamGenerateContent 结尾 */
+const GOOGLE_GENERATIVE_API_REGEX = /\/v\d+\w*\/models\/[^/:]+:(generateContent|streamGenerateContent)\/?$/;
+
+/**
+ * 判断端点是否为原生 Gemini API
+ *
+ * 原生 Gemini API 格式：
+ * - https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
+ * - https://generativelanguage.googleapis.com/v1/models/gemini-pro:streamGenerateContent
+ */
+function isGoogleGenerativeEndpoint(endpoint: string | null | undefined): boolean {
+  if (!endpoint) return false;
+  return GOOGLE_GENERATIVE_API_REGEX.test(endpoint);
+}
+
+/**
+ * 从原生 Gemini 端点中提取 baseURL
+ *
+ * @example
+ * extractGoogleBaseURL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent")
+ * // => "https://generativelanguage.googleapis.com/v1beta"
+ */
+function extractGoogleBaseURL(endpoint: string): string {
+  const match = endpoint.match(/^(https:\/\/generativelanguage\.googleapis\.com\/v\d+\w*)/);
+  return match?.[1] || endpoint;
+}
+
 /* ============================================================================
  * URL 处理工具函数
  * ============================================================================ */
@@ -61,6 +90,49 @@ const API_PATH_SUFFIX_REGEX = /\/(chat\/completions|responses|messages)\/?$/;
 function deriveBaseURL(endpoint: string): string {
   const [pathWithoutQuery] = endpoint.split("?");
   return pathWithoutQuery.replace(API_PATH_SUFFIX_REGEX, "");
+}
+
+/**
+ * 将配置端点上的查询参数合并到实际请求 URL 中
+ *
+ * SDK 在内部会基于 baseURL 重新拼接请求地址，导致配置在 endpoint 上的查询参数丢失。
+ * 这里统一把配置参数补回去，避免出现“配置了但请求没带上”的破事。
+ */
+function mergeEndpointQueryParams(
+  input: RequestInfo | URL,
+  endpoint: string
+): RequestInfo | URL {
+  let requestUrl: URL;
+
+  try {
+    requestUrl = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  } catch {
+    return input;
+  }
+
+  let endpointUrl: URL;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch {
+    return input;
+  }
+
+  if (!endpointUrl.search) {
+    return input;
+  }
+
+  for (const key of new Set(endpointUrl.searchParams.keys())) {
+    requestUrl.searchParams.delete(key);
+    for (const value of endpointUrl.searchParams.getAll(key)) {
+      requestUrl.searchParams.append(key, value);
+    }
+  }
+
+  if (input instanceof Request) {
+    return new Request(requestUrl, input);
+  }
+
+  return requestUrl;
 }
 
 /**
@@ -191,10 +263,13 @@ function filterMetadata(
  * @param headers - 要注入的自定义请求头
  */
 function createCustomFetch(
+  endpoint: string,
   metadata: Record<string, unknown> | null,
   headers: Record<string, string>
 ): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestInput = mergeEndpointQueryParams(input, endpoint);
+
     // 使用 Headers API 确保用户 headers 完全覆盖 SDK headers
     const mergedHeaders = new Headers(init?.headers);
     for (const [key, value] of Object.entries(headers)) {
@@ -203,21 +278,21 @@ function createCustomFetch(
 
     // 非 POST 请求或无 body 时，仅注入 headers
     if (init?.method?.toUpperCase() !== "POST" || !init.body) {
-      return fetch(input, { ...init, headers: mergedHeaders });
+      return fetch(requestInput, { ...init, headers: mergedHeaders });
     }
 
     // POST 请求：尝试将 metadata 合并到请求体
     try {
       const originalBody = typeof init.body === "string" ? JSON.parse(init.body) : init.body;
       const mergedBody = metadata ? { ...originalBody, ...metadata } : originalBody;
-      return fetch(input, {
+      return fetch(requestInput, {
         ...init,
         headers: mergedHeaders,
         body: JSON.stringify(mergedBody),
       });
     } catch {
       // JSON 解析失败时，仅注入 headers
-      return fetch(input, { ...init, headers: mergedHeaders });
+      return fetch(requestInput, { ...init, headers: mergedHeaders });
     }
   };
 }
@@ -247,7 +322,7 @@ function createModel(config: ProviderConfig) {
     "User-Agent": "check-cx/0.1.0",
     ...config.requestHeaders,
   };
-  const customFetch = createCustomFetch(filterMetadata(config.metadata), headers);
+  const customFetch = createCustomFetch(endpoint, filterMetadata(config.metadata), headers);
 
   switch (config.type) {
     case "openai": {
@@ -269,14 +344,31 @@ function createModel(config: ProviderConfig) {
     }
 
     case "gemini": {
-      const provider = createOpenAICompatible({
-        name: "gemini",
-        apiKey: config.apiKey,
-        baseURL,
-        fetch: customFetch,
-      });
-      // Gemini 不支持 reasoning_effort
-      return { model: provider(modelId), reasoningEffort: undefined, isResponses: false };
+      // 自动检测：原生 Gemini API vs OpenAI 兼容格式
+      if (isGoogleGenerativeEndpoint(endpoint)) {
+        // 原生 Gemini API：使用 @ai-sdk/google
+        const googleBaseURL = extractGoogleBaseURL(endpoint);
+        const provider = createGoogleGenerativeAI({
+          apiKey: config.apiKey,
+          baseURL: googleBaseURL,
+          fetch: customFetch,
+        });
+        return {
+          model: provider(modelId),
+          reasoningEffort: undefined,
+          isResponses: false,
+          isGoogleGenerative: true, // 标记为原生 Gemini
+        };
+      } else {
+        // OpenAI 兼容格式：使用 createOpenAICompatible
+        const provider = createOpenAICompatible({
+          name: "gemini",
+          apiKey: config.apiKey,
+          baseURL,
+          fetch: customFetch,
+        });
+        return { model: provider(modelId), reasoningEffort: undefined, isResponses: false };
+      }
     }
 
     default:
@@ -363,7 +455,8 @@ function buildCheckResult(
   params: ResultBuilderParams,
   status: HealthStatus | "validation_failed" | "failed" | "error",
   latencyMs: number | null,
-  message: string
+  message: string,
+  logMessage?: string
 ): CheckResult {
   return {
     id: params.config.id,
@@ -376,31 +469,9 @@ function buildCheckResult(
     pingLatencyMs: params.pingLatencyMs,
     checkedAt: new Date().toISOString(),
     message,
+    ...(logMessage ? { logMessage } : {}),
+    groupName: params.config.groupName || null,
   };
-}
-
-/* ============================================================================
- * 调试日志
- * ============================================================================ */
-
-/**
- * 打印检查结果调试日志
- *
- * 格式：[provider] 分组 | 名称 | Q: 问题 | A: 回答 | 期望: 答案 | 验证: 状态
- */
-function logCheckResult(
-  config: ProviderConfig,
-  prompt: string,
-  response: string,
-  expectedAnswer: string,
-  isValid: boolean | null
-): void {
-  const validStatus = isValid === null ? "失败(空回复)" : isValid ? "通过" : "失败";
-  const groupName = config.groupName || "默认";
-  const normalizedPrompt = prompt.replace(/\r?\n/g, " ");
-  console.log(
-    `[${config.type}] ${groupName} | ${config.name} | Q: ${normalizedPrompt} | A: ${response || "(空)"} | 期望: ${expectedAnswer} | 验证: ${validStatus}`
-  );
 }
 
 /* ============================================================================
@@ -472,19 +543,22 @@ export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResul
 
     // 检查流处理过程中是否有错误
     if (streamError) {
-      logCheckResult(config, challenge.prompt, "", challenge.expectedAnswer, null);
-      return buildCheckResult(params, "error", latencyMs, getErrorMessage(streamError));
+      return buildCheckResult(
+        params,
+        "error",
+        latencyMs,
+        getErrorMessage(streamError),
+        getSanitizedErrorDetail(streamError)
+      );
     }
 
     // 空回复
     if (!collectedResponse.trim()) {
-      logCheckResult(config, challenge.prompt, "", challenge.expectedAnswer, null);
       return buildCheckResult(params, "failed", latencyMs, "回复为空");
     }
 
     // 验证答案
     const { valid, extractedNumbers } = validateResponse(collectedResponse, challenge.expectedAnswer);
-    logCheckResult(config, challenge.prompt, collectedResponse, challenge.expectedAnswer, valid);
 
     if (!valid) {
       const actualNumbers = extractedNumbers?.join(", ") || "(无数字)";
@@ -503,7 +577,13 @@ export async function checkWithAiSdk(config: ProviderConfig): Promise<CheckResul
     return buildCheckResult(params, status, latencyMs, message);
   } catch (error) {
     const params = await buildParams();
-    return buildCheckResult(params, "error", null, getErrorMessage(error as AIApiCallError));
+    return buildCheckResult(
+      params,
+      "error",
+      null,
+      getErrorMessage(error as AIApiCallError),
+      getSanitizedErrorDetail(error)
+    );
   } finally {
     clearTimeout(timeout);
   }

@@ -10,9 +10,79 @@ import {getPollingIntervalMs} from "./polling-config";
 import {getLastPingStartedAt, getPollerTimer, setLastPingStartedAt, setPollerTimer,} from "./global-state";
 import {startOfficialStatusPoller} from "./official-status-poller";
 import {ensurePollerLeadership, isPollerLeader} from "./poller-leadership";
-import type {HealthStatus} from "../types";
+import type {CheckResult, HealthStatus} from "../types";
 
 const POLL_INTERVAL_MS = getPollingIntervalMs();
+const FAILURE_STATUSES: ReadonlySet<HealthStatus> = new Set([
+  "failed",
+  "validation_failed",
+  "error",
+]);
+
+function isFailureResult(result: CheckResult): boolean {
+  return FAILURE_STATUSES.has(result.status);
+}
+
+function formatDuration(value: number | null): string {
+  return typeof value === "number" ? `${value}ms` : "N/A";
+}
+
+function normalizeGroupName(groupName: string | null | undefined): string {
+  return groupName?.trim() || "默认分组";
+}
+
+function logFullMessage(message: string): void {
+  const normalizedMessage = message.replace(/\r\n/g, "\n");
+  const lines = normalizedMessage.split("\n");
+
+  for (const line of lines) {
+    console.error(`[check-cx]     message: ${line}`);
+  }
+}
+
+function logFailedResultsByGroup(results: CheckResult[]): void {
+  const failedResults = results.filter(isFailureResult);
+  if (failedResults.length === 0) {
+    return;
+  }
+
+  const groupedResults = new Map<string, CheckResult[]>();
+  for (const result of failedResults) {
+    const groupName = normalizeGroupName(result.groupName);
+    const items = groupedResults.get(groupName);
+    if (items) {
+      items.push(result);
+      continue;
+    }
+    groupedResults.set(groupName, [result]);
+  }
+
+  console.error("[check-cx] ==================================================");
+  console.error(
+    `[check-cx] 本轮检测失败批次：共 ${failedResults.length} 条，分为 ${groupedResults.size} 组`
+  );
+
+  for (const [groupName, items] of [...groupedResults.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    console.error(`[check-cx] [${groupName}] ${items.length} 条`);
+
+    for (const result of items.sort((left, right) => left.name.localeCompare(right.name))) {
+      console.error(
+        `[check-cx]   - ${result.name}(${result.type}/${result.model}) -> ${result.status} | latency=${formatDuration(
+          result.latencyMs
+        )} | ping=${formatDuration(result.pingLatencyMs)} | endpoint=${result.endpoint}`
+      );
+
+      const fullMessage = result.logMessage || result.message || "无";
+      logFullMessage(fullMessage);
+    }
+
+    console.error("[check-cx] --------------------------------------------------");
+  }
+
+  console.error("[check-cx] ====================== 批次结束 =====================");
+}
 
 /**
  * 执行一次轮询检查
@@ -25,7 +95,6 @@ async function tick() {
     return;
   }
   if (!isPollerLeader()) {
-    console.log("[check-cx] 当前节点为 standby，跳过本轮轮询");
     return;
   }
   // 原子操作：检查并设置运行状态
@@ -41,77 +110,19 @@ async function tick() {
   }
   globalThis.__checkCxPollerRunning = true;
 
-  const startedAt = Date.now();
-  setLastPingStartedAt(startedAt);
-  console.log(
-    `[check-cx] 后台 ping 开始 · ${new Date(
-      startedAt
-    ).toISOString()} · interval=${POLL_INTERVAL_MS}ms`
-  );
+  setLastPingStartedAt(Date.now());
   try {
     const allConfigs = await loadProviderConfigsFromDB();
     // 过滤掉维护中的配置
     const configs = allConfigs.filter((cfg) => !cfg.is_maintenance);
 
     if (configs.length === 0) {
-      console.log(`[check-cx] 数据库中未找到启用的配置，本轮 ping 结束`);
       return;
     }
 
     const results = await runProviderChecks(configs);
-
-    console.log("[check-cx] 本轮检测明细：");
-    results.forEach((result) => {
-      const latency =
-        typeof result.latencyMs === "number" ? `${result.latencyMs}ms` : "N/A";
-      const pingLatency =
-        typeof result.pingLatencyMs === "number"
-          ? `${result.pingLatencyMs}ms`
-          : "N/A";
-      const sanitizedMessage = (result.message || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 200);
-      console.log(
-        `[check-cx]   · ${result.name}(${result.type}/${result.model}) -> ${
-          result.status
-        } | latency=${latency} | ping=${pingLatency} | endpoint=${
-          result.endpoint
-        } | message=${
-          sanitizedMessage || "无"
-        }`
-      );
-    });
-
-    console.log(`[check-cx] 正在写入历史记录（${results.length} 条）…`);
     await historySnapshotStore.append(results);
-    const providerCount = new Set(results.map((item) => item.id)).size;
-    console.log(
-      `[check-cx] 历史记录更新完成：providers=${providerCount}，本轮新增=${results.length}`
-    );
-
-    const statusCounts: Record<HealthStatus, number> = {
-      operational: 0,
-      degraded: 0,
-      failed: 0,
-      validation_failed: 0,
-      maintenance: 0,
-      error: 0,
-    };
-    results.forEach((result) => {
-      statusCounts[result.status] += 1;
-    });
-
-    const elapsed = Date.now() - startedAt;
-    const nextSchedule = new Date(startedAt + POLL_INTERVAL_MS).toISOString();
-
-    console.log(
-      `[check-cx] 本轮 ping 完成，用时 ${elapsed}ms；operational=${
-        statusCounts.operational
-      } degraded=${statusCounts.degraded} failed=${
-        statusCounts.failed
-      } error=${statusCounts.error}。下次预计 ${nextSchedule}`
-    );
+    logFailedResultsByGroup(results);
   } catch (error) {
     console.error("[check-cx] 轮询检测失败", error);
   } finally {
