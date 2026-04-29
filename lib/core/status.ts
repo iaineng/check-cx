@@ -52,28 +52,32 @@ export const OFFICIAL_STATUS_META: Record<
   {
     label: string;
     description: string;
-    color: string; // Tailwind 文本颜色类
+    bannerLabel?: string;
+    bannerBg?: string;
+    bannerBorder?: string;
   }
 > = {
   operational: {
     label: "正常",
     description: "官方服务正常运行",
-    color: "text-emerald-600",
   },
   degraded: {
     label: "降级",
     description: "官方服务性能降级",
-    color: "text-amber-600",
+    bannerLabel: "官方降级",
+    bannerBg: "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400",
+    bannerBorder: "border-amber-500/50",
   },
   down: {
     label: "故障",
     description: "官方服务出现故障",
-    color: "text-rose-600",
+    bannerLabel: "官方故障",
+    bannerBg: "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400",
+    bannerBorder: "border-rose-500/50",
   },
   unknown: {
     label: "未知",
     description: "无法获取官方状态",
-    color: "text-gray-500",
   },
 };
 

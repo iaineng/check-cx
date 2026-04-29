@@ -75,8 +75,6 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
       initialData.generatedAt
     )
   );
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
-  const [activeOfficialCardId, setActiveOfficialCardId] = useState<string | null>(null);
   const latestCheckTimestamp = useMemo(
     () => getLatestCheckTimestamp(data.providerTimelines),
     [data.providerTimelines]
@@ -124,30 +122,6 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
     const currentPeriod = data.trendPeriod ?? "7d";
     prefetchGroupData(groupName, ["7d", "15d", "30d"], currentPeriod).catch(() => undefined);
   }, [data.trendPeriod, groupName]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const media = window.matchMedia("(pointer: coarse)");
-
-    const updatePointerType = () => {
-      const hasTouch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
-      setIsCoarsePointer(media.matches || hasTouch);
-    };
-
-    updatePointerType();
-    media.addEventListener("change", updatePointerType);
-
-    return () => media.removeEventListener("change", updatePointerType);
-  }, []);
-
-  useEffect(() => {
-    if (!isCoarsePointer) {
-      setActiveOfficialCardId(null);
-    }
-  }, [isCoarsePointer]);
 
   useEffect(() => {
     if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
@@ -352,9 +326,6 @@ export function GroupDashboardView({ groupName, initialData }: GroupDashboardVie
               key={timeline.id}
               timeline={timeline}
               timeToNextRefresh={timeToNextRefresh}
-              isCoarsePointer={isCoarsePointer}
-              activeOfficialCardId={activeOfficialCardId}
-              setActiveOfficialCardId={setActiveOfficialCardId}
               availabilityStats={availabilityStats[timeline.id]}
               selectedPeriod={selectedPeriod}
             />

@@ -162,9 +162,6 @@ const CornerPlus = ({ className }: { className?: string }) => (
 interface GroupPanelProps {
   group: GroupedProviderTimelines;
   timeToNextRefresh: number | null;
-  isCoarsePointer: boolean;
-  activeOfficialCardId: string | null;
-  setActiveOfficialCardId: (id: string | null) => void;
   gridColsClass: string;
   availabilityStats: AvailabilityStatsMap;
   selectedPeriod: AvailabilityPeriod;
@@ -200,9 +197,6 @@ function SortableGroupPanel(props: GroupPanelProps & { id: string }) {
 function GroupPanel({
   group,
   timeToNextRefresh,
-  isCoarsePointer,
-  activeOfficialCardId,
-  setActiveOfficialCardId,
   gridColsClass,
   availabilityStats,
   selectedPeriod,
@@ -313,9 +307,6 @@ function GroupPanel({
               key={timeline.id}
               timeline={timeline}
               timeToNextRefresh={timeToNextRefresh}
-              isCoarsePointer={isCoarsePointer}
-              activeOfficialCardId={activeOfficialCardId}
-              setActiveOfficialCardId={setActiveOfficialCardId}
               availabilityStats={availabilityStats[timeline.id]}
               selectedPeriod={selectedPeriod}
             />
@@ -343,9 +334,7 @@ export function DashboardView({ initialData }: DashboardViewProps) {
       initialData.generatedAt
     )
   );
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [isDndReady, setIsDndReady] = useState(false);
-  const [activeOfficialCardId, setActiveOfficialCardId] = useState<string | null>(null);
   
   const { providerTimelines, total, lastUpdated, pollIntervalLabel } = data;
   const availabilityStats: AvailabilityStatsMap = data.availabilityStats ?? {};
@@ -546,26 +535,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
   }, [data.trendPeriod, groupedTimelines]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const media = window.matchMedia("(pointer: coarse)");
-    const updatePointerType = () => {
-      const hasTouch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
-      setIsCoarsePointer(media.matches || hasTouch);
-    };
-    updatePointerType();
-    media.addEventListener("change", updatePointerType);
-    return () => media.removeEventListener("change", updatePointerType);
-  }, []);
-
-  useEffect(() => {
-    if (!isCoarsePointer) {
-      setActiveOfficialCardId(null);
-    }
-  }, [isCoarsePointer]);
-
-  useEffect(() => {
     if (!data.pollIntervalMs || data.pollIntervalMs <= 0) {
       return;
     }
@@ -732,9 +701,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
         const commonProps = {
           group,
           timeToNextRefresh,
-          isCoarsePointer,
-          activeOfficialCardId,
-          setActiveOfficialCardId,
           gridColsClass,
           availabilityStats,
           selectedPeriod,
@@ -970,9 +936,6 @@ export function DashboardView({ initialData }: DashboardViewProps) {
                 key={timeline.id}
                 timeline={timeline}
                 timeToNextRefresh={timeToNextRefresh}
-                isCoarsePointer={isCoarsePointer}
-                activeOfficialCardId={activeOfficialCardId}
-                setActiveOfficialCardId={setActiveOfficialCardId}
                 availabilityStats={availabilityStats[timeline.id]}
                 selectedPeriod={selectedPeriod}
               />
